@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<title>Cell max-width and table excess width distribution</title>
+<link rel="author" title="David Grogan" href="mailto:dgrogan@chromium.org">
+<link rel="help" href="https://drafts.csswg.org/css-tables-3/#outer-max-content">
+<link rel="help" href="https://drafts.csswg.org/css-tables-3/#max-content-width-of-a-column-based-on-cells-of-span-up-to-1">
+<link rel="help" href="https://drafts.csswg.org/css-tables-3/#max-content-sizing-guess">
+<link rel="help" href="https://drafts.csswg.org/css-tables-3/#distributing-excess-width-to-columns" title="#2,#3 in the <ol>">
+<link rel="match" href="../../reference/ref-filled-green-100px-square.xht">
+<link rel="bookmark" href="https://crbug.com/482057" />
+<meta name="flags" content="" />
+<meta name="assert" content="When distributing excess table width, non-constrained columns receive the excess width before constrained columns.">
+
+<style>
+table {
+  background: green;
+  height: 100px;
+  width: 100px;
+}
+
+#second-cell {
+  max-width: 0px;
+  width: 100px; /* This makes the column "constrained" */
+  background: red;
+}
+</style>
+
+<p>Test passes if there is a filled green square and <strong>no red</strong>.</p>
+<table cellpadding=0 cellspacing=0>
+  <tr>
+    <td></td>
+    <td id=second-cell></td>
+  </tr>
+</table>
