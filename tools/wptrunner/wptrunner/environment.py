@@ -1,12 +1,13 @@
 import json
 import os
-
 import signal
 import socket
 import sys
 import time
+import uuid
 
 from mozlog import get_default_logger, handlers, proxy
+from mozlog.structuredlog import StructuredLogger
 
 from . import mpcontext
 from .wptlogging import LogLevelRewriter
@@ -50,6 +51,76 @@ class TestEnvironmentError(Exception):
     pass
 
 
+class _QueueLogger(StructuredLogger):
+    """Structured logger that has a unique name and puts messages on a queue"""
+    def __init__(self, queue):
+        name = str(uuid.uuid4())
+        self.queue = queue
+        super().__init__(name)
+        assert not self.handlers
+
+    def _handle_log(self, data):
+        self.queue.put(data)
+
+
+class LoggerProxy:
+    """Logger frontend that puts messages on a provided queue.
+
+    This is intended for use in wptserve which doesn't directly depend
+    on mozlog, so it presents an API similar to the stdlib logger module.
+
+    To allow the data to be used directly by mozlog, we construct
+    an internal StructuredLogger that is just used to transform the data
+    into the correct format. This is given a unique name to avoid clashing
+    with any other configured loggers.
+    """
+
+    def __init__(self, name, queue):
+        self.name = name
+        self._logger = _QueueLogger(queue)
+
+    def critical(self, *args):
+        self._logger.critical(*args)
+
+    def error(self, *args):
+        self._logger.error(*args)
+
+    def warning(self, *args):
+        self._logger.warning(*args)
+
+    def info(self, *args):
+        self._logger.info(*args)
+
+    def debug(self, *args):
+        self._logger.debug(*args)
+
+
+class ProxyLoggingContext:
+    """Context manager object that handles setup and teardown of a logger to pass to wptserve"""
+
+    def __init__(self, component):
+        server_logger = get_default_logger(component=component)
+        assert server_logger is not None
+        log_filter = handlers.LogLevelFilter(lambda x: x, "info")
+        # Downgrade errors to warnings for the server
+        log_filter = LogLevelRewriter(log_filter, ["error"], "warning")
+        server_logger.component_filter = log_filter
+
+        mp_context = mpcontext.get_context()
+        self.log_queue = mp_context.Queue()
+        self.logging_thread = proxy.LogQueueThread(self.log_queue, server_logger)
+        self.logger = LoggerProxy("wptserve", self.log_queue)
+
+    def __enter__(self):
+        self.logging_thread.start()
+        return self.logger
+
+    def __exit__(self, *args):
+        self.log_queue.put(None)
+        # Wait for thread to shut down but not for too long since it's a daemon
+        self.logging_thread.join(1)
+
+
 class TestEnvironment(object):
     """Context manager that owns the test environment i.e. the http and
     websockets servers"""
@@ -60,6 +131,7 @@ class TestEnvironment(object):
         self.server = None
         self.config_ctx = None
         self.config = None
+        self.server_logging_ctx = ProxyLoggingContext("wptserve")
         self.testharness_timeout_multipler = testharness_timeout_multipler
         self.pause_after_test = pause_after_test
         self.debug_test = debug_test
@@ -77,14 +149,13 @@ class TestEnvironment(object):
         self.mojojs_path = mojojs_path
 
     def __enter__(self):
-        self.config_ctx = self.build_config()
+        server_logger = self.server_logging_ctx.__enter__()
+        self.config_ctx = self.build_config(server_logger)
 
         self.config = self.config_ctx.__enter__()
 
         self.stash.__enter__()
         self.cache_manager.__enter__()
-
-        self.setup_server_logging()
 
         assert self.env_extras_cms is None, (
             "A TestEnvironment object cannot be nested")
@@ -118,6 +189,7 @@ class TestEnvironment(object):
         self.cache_manager.__exit__(exc_type, exc_val, exc_tb)
         self.stash.__exit__()
         self.config_ctx.__exit__(exc_type, exc_val, exc_tb)
+        self.server_logging_ctx.__exit__(exc_type, exc_val, exc_tb)
 
     def ignore_interrupts(self):
         signal.signal(signal.SIGINT, signal.SIG_IGN)
@@ -125,10 +197,10 @@ class TestEnvironment(object):
     def process_interrupts(self):
         signal.signal(signal.SIGINT, signal.SIG_DFL)
 
-    def build_config(self):
+    def build_config(self, server_logger):
         override_path = os.path.join(serve_path(self.test_paths), "config.json")
 
-        config = serve.ConfigBuilder()
+        config = serve.ConfigBuilder(proxy_logger=server_logger)
 
         ports = {
             "http": [8000, 8001],
@@ -162,25 +234,6 @@ class TestEnvironment(object):
         config.doc_root = serve_path(self.test_paths)
 
         return config
-
-    def setup_server_logging(self):
-        server_logger = get_default_logger(component="wptserve")
-        assert server_logger is not None
-        log_filter = handlers.LogLevelFilter(lambda x: x, "info")
-        # Downgrade errors to warnings for the server
-        log_filter = LogLevelRewriter(log_filter, ["error"], "warning")
-        server_logger.component_filter = log_filter
-
-        server_logger = proxy.QueuedProxyLogger(server_logger,
-                                                mpcontext.get_context())
-
-        try:
-            # Set as the default logger for wptserve
-            serve.set_logger(server_logger)
-            serve.logger = server_logger
-        except Exception:
-            # This happens if logging has already been set up for wptserve
-            pass
 
     def get_routes(self):
         route_builder = serve.RoutesBuilder()

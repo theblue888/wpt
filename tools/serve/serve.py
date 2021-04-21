@@ -1077,6 +1077,7 @@ def ensure_logger(config):
         logger = config.logger
         set_logger(logger)
 
+
 def run(config_cls=ConfigBuilder, route_builder=None, mp_context=None, **kwargs):
     received_signal = threading.Event()
 
