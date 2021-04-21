@@ -874,6 +874,7 @@ def start_quic_transport_server(host, port, paths, routes, bind_address, config,
 
 
 def start(config, routes, mp_context, **kwargs):
+    ensure_logger(config)
     host = config["server_host"]
     ports = config.ports
     paths = config.paths
