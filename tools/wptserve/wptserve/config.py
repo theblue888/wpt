@@ -28,11 +28,25 @@ def _merge_dict(base_dict, override_dict):
 
 
 class Config(Mapping):
-    """wptserve config
+    """wptserve configuration data
 
-    Inherits from Mapping for backwards compatibility with the old dict-based config"""
-    def __init__(self, logger_name, data):
-        self.__dict__["_logger_name"] = logger_name
+    Immutable configuration that's safe to be passed between processes.
+
+    Inherits from Mapping for backwards compatibility with the old dict-based config
+
+    :param logger: - Either the name of the logger to use, or an object that will be
+                     used as the logger. In the case of an object this must be safe
+                     to share directly between processes.
+    :param data: - Extra configuration data
+    """
+    def __init__(self, logger, data):
+        for name in data.keys():
+            if name.startswith("_"):
+                raise ValueError("Invalid configuration key %s" % name)
+        if isinstance(logger, str):
+            self.__dict__["_logger_name"] = logger
+        else:
+            self.__dict__["_logger"] = logger
         self.__dict__.update(data)
 
     def __str__(self):
@@ -61,12 +75,14 @@ class Config(Mapping):
 
     @property
     def logger(self):
+        if "_logger" in self.__dict__:
+            return self._logger
         logger = logging.getLogger(self._logger_name)
         logger.setLevel(self.log_level.upper())
         return logger
 
     def as_dict(self):
-        return json_types(self.__dict__)
+        return json_types(self.__dict__, skip={"_logger"})
 
     # Environment variables are limited in size so we need to prune the most egregious contributors
     # to size, the origin policy subdomains.
@@ -94,9 +110,11 @@ class Config(Mapping):
         return result
 
 
-def json_types(obj):
+def json_types(obj, skip=None):
+    if skip is None:
+        skip = set()
     if isinstance(obj, dict):
-        return {key: json_types(value) for key, value in obj.items()}
+        return {key: json_types(value) for key, value in obj.items() if key not in skip}
     if (isinstance(obj, str) or
         isinstance(obj, int) or
         isinstance(obj, float) or
@@ -134,6 +152,25 @@ class ConfigBuilder(object):
     dictionary containing the current set of properties. Thus computed
     properties later in the list may depend on the value of earlier
     ones.
+
+
+    :param logger: - A logger object. The name and level of this logger
+                     will be part of the configuration, but the object
+                     iself is not included.
+    :param subdomains: - A set of valid subdomains to included in the
+                         configuration.
+    :param not_subdomains: - A set of invalid subdomains to included in
+                             the configuration.
+    :param config_cls: - A class to use for the configuration. Defaults
+                         to default_config_cls
+    :param proxy_logger: - A logger object that will be included directly
+                           in the configuration. If proxy_logger is
+                           passed then the logger parameter must be None.
+                           This object must be safe to pass between
+                           processes as a pickle. A typical usage would
+                           be to pass an object that adds log messages
+                           to a queue that will be drained by the main
+                           process.
     """
 
     _default = {
@@ -186,6 +223,7 @@ class ConfigBuilder(object):
                  subdomains=set(),
                  not_subdomains=set(),
                  config_cls=None,
+                 proxy_logger=None,
                  **kwargs):
 
         self._data = self._default.copy()
@@ -193,13 +231,20 @@ class ConfigBuilder(object):
 
         self._config_cls = config_cls or self.default_config_cls
 
-        if logger is None:
-            self._logger_name = "web-platform-tests"
+        if proxy_logger is not None and logger is not None:
+            raise ValueError("Can't provide both proxy_logger and logger")
+
+        if proxy_logger is not None:
+            self._proxy_logger = proxy_logger
         else:
-            level_name = logging.getLevelName(logger.level)
-            if level_name != "NOTSET":
-                self.log_level = level_name
-            self._logger_name = logger.name
+            self._proxy_logger = None
+            if logger is None:
+                self._logger_name = "web-platform-tests"
+            else:
+                level_name = logging.getLevelName(logger.level)
+                if level_name != "NOTSET":
+                    self.log_level = level_name
+                self._logger_name = logger.name
 
         for k, v in self._default.items():
             self._data[k] = kwargs.pop(k, v)
@@ -228,8 +273,11 @@ class ConfigBuilder(object):
 
     @property
     def logger(self):
-        logger = logging.getLogger(self._logger_name)
-        logger.setLevel(self._data["log_level"].upper())
+        if self._proxy_logger is not None:
+            logger = self._proxy_logger
+        else:
+            logger = logging.getLogger(self._logger_name)
+            logger.setLevel(self._data["log_level"].upper())
         return logger
 
     def update(self, override):
@@ -268,7 +316,8 @@ class ConfigBuilder(object):
         prefix = "_get_"
         for key in self.computed_properties:
             data[key] = getattr(self, prefix + key)(data)
-        return self._config_cls(self._logger_name, data)
+        logger = self._proxy_logger if self._proxy_logger is not None else self._logger_name
+        return self._config_cls(logger, data)
 
     def __exit__(self, *args):
         self._ssl_env.__exit__(*args)
