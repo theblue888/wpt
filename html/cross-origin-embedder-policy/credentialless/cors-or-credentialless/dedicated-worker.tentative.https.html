@@ -52,7 +52,8 @@ promise_test(async test => {
 
       const w_worker_src_2 = same_origin + executor_js_path +
         coep_for_worker + `&uuid=${worker_token_2}`;
-      send(w_credentialless_token, `new Worker("${w_worker_src_2}", {});`);
+      send(w_credentialless_token, `
+        const worker = new Worker("${w_worker_src_2}", {});`);
 
       // Fetch resources with the workers.
       const request_token_1 = token();
@@ -61,19 +62,30 @@ promise_test(async test => {
       const request_url_2 = showRequestHeaders(origin, request_token_2);
       send(worker_token_1,
         `fetch("${request_url_1}", {mode: 'no-cors', credentials: 'include'})`);
-      send(worker_token_2,
-        `fetch("${request_url_2}", {mode: 'no-cors', credentials: 'include'})`);
-
-      // Retrieve the resource request info.
       const headers_control = JSON.parse(await receive(request_token_1));
-      const headers_credentialless = JSON.parse(await receive(request_token_2));
-
       assert_equals(parseCookies(headers_control)[cookie_key],
         expected_cookies_control,
         "coep:none => ");
-      assert_equals(parseCookies(headers_credentialless)[cookie_key],
+
+      if (coep_for_worker == coep_credentialless) {
+        send(worker_token_2,
+        `fetch("${request_url_2}", {mode: 'no-cors', credentials: 'include'});`);
+        const headers_credentialless = JSON.parse(await receive(request_token_2));
+
+        assert_equals(parseCookies(headers_credentialless)[cookie_key],
         expected_cookies_credentialless,
         "coep:credentialless => ");
+      } else {
+        // Fetch with COEP:none worker under COEP:cors-or-credentialless frame
+        // would cause network error.
+        send(w_credentialless_token, `
+          await new Promise(resolve => {
+            send("${request_token_2}", "Fetch Error.");
+            worker.onerror = resolve;
+        });`);
+        const response_credentialless = await receive(request_token_2);
+        assert_equals(response_credentialless, "Fetch Error.");
+      }
     }, `fetch ${description}`)
   };
 
