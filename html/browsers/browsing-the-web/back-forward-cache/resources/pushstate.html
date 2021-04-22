@@ -1,0 +1,34 @@
+<!doctype html>
+<script src="/common/PrefixedLocalStorage.js"></script>
+<script src="helper.sub.js"></script>
+<script>
+
+startRecordingEvents(['visibilitychange', 'pagehide', 'pageshow', 'load']);
+
+window.addEventListener('popstate', () => { console.log('popstate'); });
+window.onload = () => { console.log('load'); };
+
+runTest(
+  () => {
+    history.pushState("blue", '', location.href + '&pushState=yes');
+    location.href = backUrl;
+  },
+  (isBFCached, observedEvents) => {
+    console.log(isBFCached, observedEvents);
+    const historyState1 = history.state;
+    const url1 = location.href;
+    window.onpopstate = () => {
+      prefixedLocalStorage.setItem(
+        'result',
+        JSON.stringify({
+          isBFCached,
+          observedEvents,
+          historyState1: historyState1,
+          url1: url1,
+          historyState2: history.state,
+          url2: location.href
+          }));
+    };
+    history.back();
+  });
+</script>

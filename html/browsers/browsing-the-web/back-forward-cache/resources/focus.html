@@ -1,0 +1,36 @@
+<!doctype html>
+<script src="/common/PrefixedLocalStorage.js"></script>
+<script src="helper.sub.js"></script>
+<body>
+<script>
+startRecordingEvents(['visibilitychange', 'pagehide', 'pageshow', 'load']);
+
+const form = document.createElement('form');
+form.setAttribute('action', backUrl);
+
+const textInput = document.createElement('input');
+textInput.setAttribute('type', 'text');
+textInput.onfocus = () => {
+  prefixedLocalStorage.pushItem('observedEvents', 'input.focus');
+};
+textInput.onblur = () => {
+  prefixedLocalStorage.pushItem('observedEvents', 'input.blur');
+};
+
+form.appendChild(textInput);
+document.body.appendChild(form);
+textInput.focus();
+
+runTest(
+  () => {
+    form.submit();
+  },
+  (isBFCached, observedEvents) => {
+    prefixedLocalStorage.setItem(
+      'result',
+      JSON.stringify({
+        isBFCached,
+        observedEvents,
+        isFocused: (document.activeElement === textInput)}));
+  });
+</script>

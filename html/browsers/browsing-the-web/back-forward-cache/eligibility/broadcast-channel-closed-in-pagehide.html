@@ -1,0 +1,25 @@
+<!doctype html>
+<meta name="timeout" content="long">
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script src="/common/PrefixedLocalStorage.js"></script>
+<script>
+var prefixedLocalStorage;
+setup(() => prefixedLocalStorage = new PrefixedLocalStorageTest());
+
+// Needs check_eligibility_after_pagehide
+async_test(t => {
+  t.add_cleanup(() => prefixedLocalStorage.cleanup());
+  prefixedLocalStorage.onSet('result', t.step_func_done(e => {
+      const result = JSON.parse(e.newValue);
+      assert_true(result.isBFCached, 'Should be BFCached');
+  }));
+  const url = new URL('../resources/simple.py', location.href);
+  url.searchParams.set('script',
+    `window.bc = new BroadcastChannel('foo');
+     window.addEventListener('pagehide', () => window.bc.close());`);
+  window.open(prefixedLocalStorage.url(url.href),
+    '_blank',
+    'noopener');
+}, 'BroadcastChannel is open');
+</script>

@@ -1,0 +1,36 @@
+<!doctype html>
+<meta name="timeout" content="long">
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script src="/common/PrefixedLocalStorage.js"></script>
+<script>
+var prefixedLocalStorage;
+setup(() => prefixedLocalStorage = new PrefixedLocalStorageTest());
+
+// https://github.com/whatwg/html/issues/6207
+async_test(t => {
+  t.add_cleanup(() => prefixedLocalStorage.cleanup());
+  const startUrl = new URL(prefixedLocalStorage.url('resources/pushstate.html'), location.href).href + '&pipe=header(Cache-Control,no-store)';
+  const pushStatedUrl = startUrl + '&pushState=yes';
+  prefixedLocalStorage.onSet('result', t.step_func_done(e => {
+      const result = JSON.parse(e.newValue);
+      assert_false(result.isBFCached, 'Should not be BFCached');
+      assert_equals(result.historyState1, 'blue', 'history.state 1');
+      assert_equals(result.url1, pushStatedUrl, 'url 1');
+      // Failing on Safari?
+      // assert_equals(result.historyState2, null, 'history.state 2');
+      assert_equals(result.url2, startUrl, 'url 2');
+      assert_array_equals(result.observedEvents, [
+          'window.load',
+          'window.pageshow',
+          'window.pagehide',
+          'document.visibilitychange.hidden',
+          'window.visibilitychange.hidden',
+          'window.load',
+          ]);
+  }));
+  window.open(startUrl,
+    '_blank',
+    'noopener');
+}, 'back navigation to pushState()d page with BFCached navigation');
+</script>

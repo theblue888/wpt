@@ -48,6 +48,22 @@ PrefixedLocalStorage.prototype.setItem = function (baseKey, value) {
   localStorage.setItem(this.prefixedKey(baseKey), value);
 };
 
+PrefixedLocalStorage.prototype.getItem = function (baseKey) {
+  return localStorage.getItem(this.prefixedKey(baseKey));
+};
+
+PrefixedLocalStorage.prototype.pushItem = function (baseKey, value) {
+  const old = this.getItem(baseKey);
+  let newArray;
+  if (!old) {
+    newArray = [value];
+  } else {
+    newArray = JSON.parse(old);
+    newArray.push(value);
+  }
+  this.setItem(baseKey, JSON.stringify(newArray));
+};
+
 /**
  * Listen for `storage` events pertaining to a particular key,
  * prefixed with this object's prefix. Ignore when value is being set to null

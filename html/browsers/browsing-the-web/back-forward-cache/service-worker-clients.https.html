@@ -1,0 +1,64 @@
+<!doctype html>
+<meta name="timeout" content="long">
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script src="/common/PrefixedLocalStorage.js"></script>
+<script>
+async function unregisterServiceWorker(scope) {
+  const registration = await navigator.serviceWorker.getRegistration(scope);
+  if (!registration)
+    return;
+  return registration.unregister();
+}
+
+promise_test(async t => {
+  const prefixedLocalStorage = new PrefixedLocalStorageTest();
+  t.add_cleanup(() => prefixedLocalStorage.cleanup());
+
+  const workerUrl = 'resources/clients-matchall-service-worker.js';
+
+  // Start a service worker.
+  await unregisterServiceWorker(workerUrl);
+  const registration = await navigator.serviceWorker.register(workerUrl);
+  t.add_cleanup(_ => registration.unregister());
+
+  window.open(prefixedLocalStorage.url('resources/service-worker-clients-1.sub.https.html'),
+    '_blank',
+    'noopener');
+
+  const e = await new Promise(resolve => {
+    prefixedLocalStorage.onSet('result', resolve);
+  });
+
+  const result = JSON.parse(e.newValue);
+  assert_true(result.isBFCached, 'Should be BFCached');
+  assert_array_equals(result.observedEvents, [
+      'window.load',
+      'window.pageshow',
+      'window.pagehide.persisted',
+      'document.visibilitychange.hidden',
+      'window.visibilitychange.hidden',
+      'document.visibilitychange.visible',
+      'window.visibilitychange.visible',
+      'window.pageshow.persisted']);
+
+  let expectedClients1 = [
+    location.href,
+    new URL(prefixedLocalStorage.url('resources/service-worker-clients-1.sub.https.html'), location.href).href,
+    new URL(prefixedLocalStorage.url('resources/clients-matchall-iframe.html?key=clients-1'), location.href).href
+  ].sort();
+  const actualClients1 = JSON.parse(prefixedLocalStorage.getItem('clients-1')).sort();
+  assert_array_equals(actualClients1, expectedClients1,
+    'Clients#matchAll() while clients-1 page is active');
+
+  // `service-worker-clients-1.sub.https.html` shouldn't appear here because it is in BFCache.
+  // `service-worker-clients-2.sub.https.html` doesn't appear here because it is served on a different site.
+  let expectedClients2 = [
+    location.href,
+    new URL(prefixedLocalStorage.url('resources/clients-matchall-iframe.html?key=clients-2'), location.href).href
+  ].sort();
+  const actualClients2 = JSON.parse(prefixedLocalStorage.getItem('clients-2')).sort();
+  assert_array_equals(actualClients2, expectedClients2,
+    'Clients#matchAll() while clients-1 page is in BFCache');
+}, 'BFCached pages should not appear in Clients#matchAll()');
+</script>

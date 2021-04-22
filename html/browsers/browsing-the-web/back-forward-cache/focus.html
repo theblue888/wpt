@@ -1,0 +1,32 @@
+<!doctype html>
+<meta name="timeout" content="long">
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script src="/common/PrefixedLocalStorage.js"></script>
+<script>
+var prefixedLocalStorage;
+setup(() => prefixedLocalStorage = new PrefixedLocalStorageTest());
+
+// https://github.com/whatwg/html/issues/5878
+async_test(t => {
+  t.add_cleanup(() => prefixedLocalStorage.cleanup());
+  prefixedLocalStorage.onSet('result', t.step_func_done(e => {
+      const result = JSON.parse(e.newValue);
+      assert_true(result.isBFCached, 'Should be BFCached');
+      assert_true(result.isFocused, 'Should be focused');
+      assert_array_equals(result.observedEvents, [
+          'input.focus',
+          'window.load',
+          'window.pageshow',
+          'window.pagehide.persisted',
+          'document.visibilitychange.hidden',
+          'window.visibilitychange.hidden',
+          'document.visibilitychange.visible',
+          'window.visibilitychange.visible',
+          'window.pageshow.persisted']);
+  }));
+  window.open(prefixedLocalStorage.url('resources/focus.html'),
+    '_blank',
+    'noopener');
+}, 'Focus is restored on BFCached navigation');
+</script>
