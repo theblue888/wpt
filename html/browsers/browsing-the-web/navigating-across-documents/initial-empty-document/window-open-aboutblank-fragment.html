@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<meta charset="UTF-8">
+<title>Fragment navigation on initial empty document created through window.open(about:blank)</title>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script src="resources/helpers.js"></script>
+<body></body>
+<script>
+"use strict";
+const postMessageToOpenerOnLoad = `
+    window.onload = () => {
+      window.opener.postMessage("loaded", "*")
+    }
+`;
+const url1 = "about:blank#foo";
+const url2 = "resources/code-injector.html?2&pipe=sub(none)&code=" + encodeURIComponent(postMessageToOpenerOnLoad);
+
+promise_test(async t => {
+  // Open a window with URL about:blank, which will commit the initial empty document, and wait for it to load.
+  const openedWindow = await windowOpenAboutBlank(t);
+
+  // Do a fragment navigation within the initial empty document through setting location.href.
+  openedWindow.location.href = url1;
+  await new Promise(resolve => t.step_timeout(resolve, 100));
+  assert_equals(openedWindow.location.hash, "#foo");
+  assert_equals(openedWindow.history.length, 1,
+    "history.length should not increase after fragment navigation on initial empty document");
+
+  // Navigate away from the non-initial empty document through setting location.href.
+  openedWindow.location.href = url2;
+  await waitForMessage(t, "loaded");
+  assert_equals(openedWindow.history.length, 2,
+    "history.length should increase after normal navigation away from initial empty document after a fragment navigation");
+}, "location.href");
+
+promise_test(async t => {
+  // Open a window with URL about:blank, which will commit the initial empty document, and wait for it to load.
+  const openedWindow = await windowOpenAboutBlank(t);
+
+  // Do a fragment navigation within the initial empty document through location.assign().
+  openedWindow.location.assign(url1);
+  await new Promise(resolve => t.step_timeout(resolve, 100));
+  assert_equals(openedWindow.location.hash, "#foo");
+  assert_equals(openedWindow.history.length, 1,
+    "history.length should not increase after fragment navigation on initial empty document");
+
+  // Navigate away from the non-initial empty document through location.assign().
+  openedWindow.location.assign(url2);
+  await waitForMessage(t, "loaded");
+  assert_equals(openedWindow.history.length, 2,
+    "history.length should increase after normal navigation away from initial empty document after a fragment navigation");
+}, "location.assign");
+</script>

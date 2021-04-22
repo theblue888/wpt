@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<meta charset="UTF-8">
+<title>Navigations on window.open(about:blank) after waiting for it to load</title>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script src="resources/helpers.js"></script>
+<body></body>
+<script>
+"use strict";
+const postMessageToOpenerOnLoad = `
+    window.onload = () => {
+      window.opener.postMessage("loaded", "*")
+    }
+  `;
+const url1 = "resources/code-injector.html?1&pipe=sub(none)&code=" + encodeURIComponent(postMessageToOpenerOnLoad);
+const url2 = "resources/code-injector.html?2&pipe=sub(none)&code=" + encodeURIComponent(postMessageToOpenerOnLoad);
+
+promise_test(async t => {
+  // Open a window with URL about:blank, which will commit the initial empty document, and wait for it to load.
+  const openedWindow = await windowOpenAboutBlankWaitForLoad(t);
+  assert_equals(openedWindow.history.length, 1, "history.length must start at 1 for newly opened window");
+
+  // Navigate away from the initial empty document through setting location.href.
+  openedWindow.location.href = url1;
+  await waitForMessage(t, "loaded");
+  assert_equals(openedWindow.history.length, 1,
+    "history.length must be 1 after normal navigation on initial empty document");
+
+  // Navigate away from the non-initial empty document through setting location.href.
+  openedWindow.location.href = url2;
+  await waitForMessage(t, "loaded");
+  assert_equals(openedWindow.history.length, 2, "history.length must increase after normal navigation from non-initial empty document");
+}, "location.href");
+
+promise_test(async t => {
+  // Open a window with URL about:blank, which will commit the initial empty document, and wait for it to load.
+  const openedWindow = await windowOpenAboutBlankWaitForLoad(t);
+  assert_equals(openedWindow.history.length, 1, "history.length must start at 1 for newly opened window");
+
+  // Navigate away from the initial empty document through location.assign().
+  openedWindow.location.assign(url1);
+  await waitForMessage(t, "loaded");
+  assert_equals(openedWindow.history.length, 1,
+    "history.length must be 1 after normal navigation on initial empty document");
+
+  // Navigate away from the non-initial empty document through location.assign().
+  openedWindow.location.assign(url2);
+  await waitForMessage(t, "loaded");
+  assert_equals(openedWindow.history.length, 2, "history.length must increase after normal navigation from non-initial empty document");
+}, "location.assign");
+
+promise_test(async t => {
+  // Open a window with URL about:blank, which will commit the initial empty document, and wait for it to load.
+  const openedWindow = await windowOpenAboutBlankWaitForLoad(t);
+  assert_equals(openedWindow.history.length, 1, "history.length must start at 1 for newly opened window");
+
+  // Navigate away from the initial empty document through setting window.open().
+  openedWindow.open(url1, "_self");
+  await waitForMessage(t, "loaded");
+  assert_equals(openedWindow.history.length, 1,
+    "history.length must be 1 after normal navigation on initial empty document");
+
+  // Navigate away from the non-initial empty document through setting window.open().
+  openedWindow.open(url2, "_self");
+  await waitForMessage(t, "loaded");
+  assert_equals(openedWindow.history.length, 2, "history.length must increase after normal navigation from non-initial empty document");
+}, "window.open");
+</script>
